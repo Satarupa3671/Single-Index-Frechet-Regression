@@ -1,5 +1,5 @@
 using Distributed
-addprocs(4)
+addprocs(2)
 @everywhere using Distributions
 @everywhere using GLM
 @everywhere using StatsBase
@@ -132,6 +132,11 @@ end
 ### Binning step: given data and direction bins the support of the projection and returns a representative point for the data (xin and qin)
 #### Depends on the number of bins: M
 @everywhere function binned_data(dat, direc, M)
+ if ismissing(M)
+    hh = tuning(dat,direc)
+    bw = hh[1]
+    M = ceil(Int, hh[2])
+  end
   xin = dat.xin
   qin = dat.qin
   d1, d2 = size(xin)
@@ -175,7 +180,7 @@ end
 end
  
 ### Implements the selcetion of bandw for the local fr reg and, for the  optimal choice of bandw, selects the optimal bin size
-@everywhere function tuning(dat, direc, M; ker = ker_gauss)
+@everywhere function tuning(dat, direc; ker = ker_gauss)
   xin = dat.xin
   qin = dat.qin
   d1, d2 = size(xin)
@@ -199,7 +204,7 @@ end
   #bw_init = mean(bw_range)
   bw = optimize(x -> bwCV(dat, direc, x), bw_min, bw_max).minimizer
 
-  if ismissing(M)
+  #if ismissing(M)
     M_range = [ceil(Int, d1^(1/p)) for p in 3:7]
     #M_range = collect(range(minimum(binned_dat.binned_xmean),stop = maximum(binned_dat.binned_xmean), length = 30))
     M_curr = M_range[1]
@@ -211,7 +216,7 @@ end
       end
     end
     M = ceil(Int, M_curr)
-  end
+  #end
   return([bw,M])
 end
 
@@ -248,7 +253,7 @@ end
   bw1 = bw
   #M = missing
   if ismissing(bw)
-    hh = tuning(dat,direc_curr_i,M)
+    hh = tuning(dat,direc_curr_i)
     bw = hh[1]
     M = ceil(Int, hh[2])
   end
@@ -268,7 +273,7 @@ end
     binned_dat = binned_data(dat, direc_test, M)
     d = size(binned_dat.binned_xmean,1)
     if ismissing(bw1)
-      bw = tuning(dat,direc_curr_i,M)[1]
+      bw = tuning(dat,direc_curr_i)[1]
     end
     err = 0.
     for l in 1:d
@@ -304,10 +309,10 @@ end
  
 link = [x ->x; x -> x^2; x -> exp(x)]
 for ll in 1:3
-  ddd = estimate_2pred(100; reps = 4,bw = 1, M = 5, link = link[ll])
-  #ddd = estimate_2pred(100; reps = 4,bw = missing, M = 5, link = link[ll])
-  #ddd = estimate_2pred(100; reps = 4,bw = missing, M = missing, link = link[ll])
-  #ddd = estimate_2pred(100; reps = 4,bw = missing, M = 5, link = link[ll])
+  ddd = estimate_2pred(100; reps = 2,bw = 1, M = 5, link = link[ll])
+  #ddd = estimate_2pred(100; reps = 2,bw = missing, M = 5, link = link[ll])
+  #ddd = estimate_2pred(100; reps = 2,bw = missing, M = missing, link = link[ll])
+  #ddd = estimate_2pred(100; reps = 2,bw = 1, M = missing, link = link[ll])
   #println(ddd)
 end
  
