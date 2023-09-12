@@ -131,9 +131,9 @@ end
 
 ### Binning step: given data and direction bins the support of the projection and returns a representative point for the data (xin and qin)
 #### Depends on the number of bins: M
-@everywhere function binned_data(dat, direc, M)
+@everywhere function binned_data(dat, direc, bw, M)
  if ismissing(M)
-    hh = tuning(dat,direc)
+    hh = tuning(dat,direc, bw, M)
     bw = hh[1]
     M = ceil(Int, hh[2])
   end
@@ -163,7 +163,7 @@ end
  
 ### CV criterion to select M 
 @everywhere function bwCV_M(dat, direc, M, bw; ker = ker_gauss, lower = -Inf, upper = Inf)
-  binned_dat = binned_data(dat, direc, M)
+  binned_dat = binned_data(dat, direc, bw, M)
   xin_binned = binned_dat.binned_xmean
   qin_binned = binned_dat.binned_qmean
   proj_binned = generate_proj(xin_binned, direc)
@@ -180,7 +180,7 @@ end
 end
  
 ### Implements the selcetion of bandw for the local fr reg and, for the  optimal choice of bandw, selects the optimal bin size
-@everywhere function tuning(dat, direc; ker = ker_gauss)
+@everywhere function tuning(dat, direc, bw, M; ker = ker_gauss)
   xin = dat.xin
   qin = dat.qin
   d1, d2 = size(xin)
@@ -188,23 +188,24 @@ end
   #direc = direc_curr_i
   #M = missing
   #bw = missing
-  xinSt = unique(sort!(projec))
-  bw_min = maximum(maximum.([diff(xinSt), xinSt[2] .- minimum.(projec), 
-                             maximum.(projec) .- xinSt]))*1.1 / (ker == ker_gauss ? 3 : 1)
-  bw_max = (maximum(projec) - minimum(projec))/3
-  if bw_max < bw_min 
-    if bw_min > bw_max*3/2
-      #warning("Data is too sparse.")
-      bw_max = bw_min*1.01
-    else 
-      bw_max = bw_max*3/2
+  if ismissing(bw)
+    xinSt = unique(sort!(projec))
+    bw_min = maximum(maximum.([diff(xinSt), xinSt[2] .- minimum.(projec), 
+                               maximum.(projec) .- xinSt]))*1.1 / (ker == ker_gauss ? 3 : 1)
+    bw_max = (maximum(projec) - minimum(projec))/3
+    if bw_max < bw_min 
+      if bw_min > bw_max*3/2
+        #warning("Data is too sparse.")
+        bw_max = bw_min*1.01
+      else 
+        bw_max = bw_max*3/2
+      end
     end
+    #bw_range = [bw_min, bw_max]
+    #bw_init = mean(bw_range)
+    bw = optimize(x -> bwCV(dat, direc, x), bw_min, bw_max).minimizer
   end
-  #bw_range = [bw_min, bw_max]
-  #bw_init = mean(bw_range)
-  bw = optimize(x -> bwCV(dat, direc, x), bw_min, bw_max).minimizer
-
-  #if ismissing(M)
+  if ismissing(M)
     M_range = [ceil(Int, d1^(1/p)) for p in 3:7]
     #M_range = collect(range(minimum(binned_dat.binned_xmean),stop = maximum(binned_dat.binned_xmean), length = 30))
     M_curr = M_range[1]
@@ -216,7 +217,7 @@ end
       end
     end
     M = ceil(Int, M_curr)
-  #end
+  end
   return([bw,M])
 end
 
@@ -252,12 +253,12 @@ end
   direc_curr_i = normalize(randn(d2))
   bw1 = bw
   #M = missing
-  if ismissing(bw)
-    hh = tuning(dat,direc_curr_i)
+  #if ismissing(bw)
+    hh = tuning(dat,direc_curr_i, bw, M)
     bw = hh[1]
     M = ceil(Int, hh[2])
-  end
-  binned_dat = binned_data(dat, direc_curr_i, M)
+  #end
+  binned_dat = binned_data(dat, direc_curr_i,bw, M)
   d = size(binned_dat.binned_xmean,1)
   err = 0.
   for l in 1:d
@@ -270,11 +271,11 @@ end
   for i in 2:500
     #global fdi_curr, direc_curr_i , direc_curr_t, fdt_curr,
     direc_test = normalize(randn(d2))
-    binned_dat = binned_data(dat, direc_test, M)
+    binned_dat = binned_data(dat, direc_test,bw, M)
     d = size(binned_dat.binned_xmean,1)
-    if ismissing(bw1)
-      bw = tuning(dat,direc_curr_i)[1]
-    end
+    #if ismissing(bw1)
+      bw = tuning(dat,direc_curr_i,bw1,M)[1]
+    #end
     err = 0.
     for l in 1:d
       res = LocLin(dat, direc_test, 
