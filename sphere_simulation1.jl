@@ -3,7 +3,7 @@ addprocs(2)
 @everywhere using Distributions
 @everywhere using GLM
 @everywhere using StatsBase
-#@everywhere using DataFrames
+@everywhere using DataFrames
 @everywhere using Statistics
 @everywhere using Manifolds
 @everywhere using LinearAlgebra
@@ -370,3 +370,102 @@ ddd = estimate_2pred(100; reps = 2,bw = 1, M = 5, link = link[ll])
 #ddd = estimate_2pred(100; reps = 2,bw = 1, M = missing, link = link[ll])
 #println(ddd)
 end
+
+
+############### demo data example: compute root mean prediction error
+############## Do not use the functions estimate_ichimura() or estimate_2pred() functions
+### if you want to just compute the rmpe.
+### The new function rmpe_fn_ifr estimates the best direction based on the training data 
+### and computes the prediction erro based on the test data_demo
+### Along the way bw and M are chosen adaptively.
+### This new function already implements the same method as the function estimate_ichimura does.
+@everywhere pth2 = "$(homedir())/Desktop/code_IFR"
+@everywhere cd(pth2)
+@everywhere dat2 = CSV.File("data_demo.csv") |> DataFrame
+@everywhere xin = Matrix(select(dat2,:x1, :x2, :x3,:x4))
+@everywhere yin = Matrix(select(dat2,:y1, :y2, :y3))
+@everywhere dat = (xin = xin, yin = yin)
+@everywhere n = size(dat.xin,1)
+@everywhere m =  size(dat.yin, 2)
+
+#####
+@everywhere function rmpe_fn_ifr(dat, bw, M, k1;ker = ker_gauss)
+  ###split into training and test
+  n = size(dat.xin,1)
+  ind_train = sample(1:n,k1, replace = false)
+  ind_test = setdiff(collect(1:n),ind_train)
+  dat_train = (xin = dat.xin[ind_train,:], yin = dat.yin[ind_train,:])
+  dat_test = (xin = dat.xin[ind_test,:],yin = dat.yin[ind_test,:])
+
+  xin = dat_train.xin
+  yin = dat_train.yin
+  d1, d2 = size(xin)
+  m = size(yin,2)
+  
+  ### estimates best direction for train data: same method as implemented in estimate_ichimura
+  ### For each direction over the grid, looks for the best bw and M; unless provided by user.
+  direc_curr_i = normalize(randn(d2))
+  bw1 = bw
+  #M = missing
+  #if ismissing(bw)
+  hh = tuning(dat_train, direc_curr_i, bw, M)
+  bw = hh[1]
+  M = ceil(Int, hh[2])
+  #end
+  binned_dat = binned_data(dat_train, direc_curr_i,bw, M)
+  d = size(binned_dat.binned_xmean,1)
+  err = 0.
+  for l in 1:d
+    res = LocLin(dat_train, direc_curr_i, 
+                 binned_dat.binned_xmean[l], bw;ker = ker_gauss)
+    err = (err + SpheGeoDist(res, binned_dat.binned_ymean[l,:]))
+  end
+  fdi_curr  = err/d
+  for i in 2:500
+    #global fdi_curr, direc_curr_i , direc_curr_t, fdt_curr,
+    direc_test = normalize(randn(d2))
+    binned_dat = binned_data(dat_train, direc_test,bw, M)
+    d = size(binned_dat.binned_xmean,1)
+    if ismissing(bw1) ##chooses the best bw for this direction
+      bw = tuning(dat_train,direc_curr_i,bw1,M)[1]
+    end
+    err = 0.
+    for l in 1:d
+      res = LocLin(dat_train, direc_test, 
+                   binned_dat.binned_xmean[l], bw;ker = ker_gauss)
+      err = (err + SpheGeoDist(res,binned_dat.binned_ymean[l,:]) )
+    end
+    fdi_test   = err/d
+    if fdi_test < fdi_curr
+      direc_curr_i,  fdi_curr = direc_test, fdi_test
+    end
+  end
+  train_vec_est = normalize(direc_curr_i) ##this is the estimate based on training data
+  if ismissing(bw1)  ### chooses best bw for test data, given the estimated direction
+    bw = tuning(dat_test,train_vec_est,bw1,M)[1]
+  end 
+  binned_dat_test = binned_data(dat_test, train_vec_est, bw, M)
+  d = size(binned_dat_test.binned_xmean,1)
+  err = 0.
+  for l in 1:d
+    res = LocLin(dat_test, train_vec_est, 
+                 binned_dat_test.binned_xmean[l], bw;ker = ker_gauss)
+    err = (err + SpheGeoDist(res, binned_dat_test.binned_ymean[l,:]))
+  end
+  return(err/d)
+  #return mean(LocLin(dat_test, train_vec_est, l, bw, binned_dat_test) for l in 1:d)
+end
+
+function rmpe_val(dat, reps,bw,M)
+    foo1  = _ -> rmpe_fn_ifr(dat, bw, M, Int64(ceil(2*n/3)))
+    cwp  = CachingPool(workers())
+    rmpe_ifr = pmap(foo1, cwp, 1:reps)
+    #writedlm( "./rmpe_ifr_adni_sim.csv",rmpe_ifr, ',')
+end
+reps = 2
+res_rmpe = rmpe_val(dat, 2,.2,5)/reps
+res_rmpe = rmpe_val(dat, 2,missing,5)/reps
+res_rmpe = rmpe_val(dat, 2,missing, missing)/reps
+res_rmpe = rmpe_val(dat, 2,.2,missing)/reps
+
+
