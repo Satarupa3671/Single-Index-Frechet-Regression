@@ -376,7 +376,7 @@ end
 ############## Do not use the functions estimate_ichimura() or estimate_2pred() functions
 ### if you want to just compute the rmpe.
 ### The new function rmpe_fn_ifr estimates the best direction based on the training data 
-### and computes the prediction erro based on the test data_demo
+### and computes the prediction erro based on the test data
 ### Along the way bw and M are chosen adaptively.
 ### This new function already implements the same method as the function estimate_ichimura does.
 @everywhere pth2 = "$(homedir())/Desktop/code_IFR"
@@ -453,7 +453,6 @@ end
     err = (err + SpheGeoDist(res, binned_dat_test.binned_ymean[l,:]))
   end
   return(err/d)
-  #return mean(LocLin(dat_test, train_vec_est, l, bw, binned_dat_test) for l in 1:d)
 end
 
 function rmpe_val(dat, reps,bw,M)
@@ -463,9 +462,9 @@ function rmpe_val(dat, reps,bw,M)
     #writedlm( "./rmpe_ifr_adni_sim.csv",rmpe_ifr, ',')
 end
 reps = 2
-res_rmpe = rmpe_val(dat, 2,.2,5)/reps
-res_rmpe = rmpe_val(dat, 2,missing,5)/reps
-res_rmpe = rmpe_val(dat, 2,missing, missing)/reps
-res_rmpe = rmpe_val(dat, 2,.2,missing)/reps
+res_rmpe = sum(rmpe_val(dat, 2,.02,5))/reps
+#res_rmpe = sum(rmpe_val(dat, 2,missing,5))/reps
+#res_rmpe = sum(rmpe_val(dat, 2,missing, missing))/reps
+#res_rmpe = sum(rmpe_val(dat, 2,.2,missing))/reps
 
 
