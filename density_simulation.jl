@@ -1,13 +1,13 @@
 using Distributed
-addprocs(2)
+@everywhere addprocs(2)
 @everywhere using Distributions
 @everywhere using GLM
 @everywhere using StatsBase
- #@everywhere using DataFrames
+@everywhere using DataFrames
 @everywhere using Statistics
 @everywhere using Manifolds
 @everywhere using LinearAlgebra
- #@everywhere using CSV
+@everywhere using CSV
 @everywhere using DelimitedFiles
 @everywhere using OSQP
 @everywhere using SparseArrays
@@ -190,8 +190,8 @@ end
   #bw = missing
   if ismissing(bw)
     xinSt = unique(sort!(projec))
-    bw_min = maximum(maximum.([diff(xinSt), xinSt[2] .- minimum.(projec), 
-                               maximum.(projec) .- xinSt]))*1.1 / (ker == ker_gauss ? 3 : 1)
+    bw_min = maximum(maximum.([diff(xinSt), xinSt[2] .- minimum.(xinSt), 
+                               maximum.(xinSt) .- xinSt]))*1.1 / (ker == ker_gauss ? 3 : 1)
     bw_max = (maximum(projec) - minimum(projec))/3
     if bw_max < bw_min 
       if bw_min > bw_max*3/2
@@ -316,4 +316,43 @@ for ll in 1:3
   #ddd = estimate_2pred(100; reps = 2,bw = 1, M = missing, link = link[ll])
   #println(ddd)
 end
- 
+#####
+########### bootstrap to compute asymptotic covariance matrix
+@everywhere b  = [4, 1.3,-2.5,1.7]
+@everywhere   b0 = normalize(b)
+@everywhere   d  = length(b0)
+@everywhere link = x  -> x
+@everywhere   n = 50
+@everywhere   dat = generate_data2(n, b0, link)
+@everywhere   samp_result = estimate_ichimura(dat, missing,missing)
+
+  
+function boot_est(dat,reps,bw, M, link) #boot(dat; reps = 10, bw= 3)
+  n = size(dat.xin, 1)
+  samp_ind = sample(1:n,n)
+  dat_resamp = (xin = dat.xin[samp_ind,:], qin = dat.qin[samp_ind,:])
+  foo  = _ -> estimate_ichimura(dat_resamp, bw,M)
+  cwp  = CachingPool(workers())
+  est = pmap(foo, cwp, 1:reps)
+  est_signed =  [est[i][2:end].* sign(sum(samp_result[2:end].*est[i][2:end])) for i in 1:reps]
+  #cova_boot  = cov(est_signed)
+  return est_signed
+end
+
+boot_result = boot_est(dat,16, .2, 5, link)
+cova_boot  = cov(boot_result)
+
+test_stat = mean([M *(boot_result[i] - samp_result[2:end])' * 
+              inv(cova_boot) * (boot_result[i] - samp_result[2:end]) for i in 1:reps])
+            
+test_stat2 = M *(samp_result[2:end] - b0[2:end])' *  inv(cova_boot) * (samp_result[2:end] - b0[2:end])   
+cutoff = quantile(Chisq(3), .95) ##here d =4
+##7.814727903251177
+test_stat > cutoff
+p_val = 
+##### 
+test_stat_boot_under_null = [M *(boot_result[i] - samp_result[2:end])' * 
+              inv(cova_boot) * (boot_result[i] - samp_result[2:end]) for i in 1:reps]
+test_stat_samp_under_null = M *(samp_result[2:end] - b0[2:end])' *  inv(cova_boot) * (samp_result[2:end] - b0[2:end]) 
+p_val = mean(test_stat_boot_under_null .>=   test_stat_samp_under_null)
+## writedlm( "./F_boot_test_boot_res500.csv", boot_result, ',')
